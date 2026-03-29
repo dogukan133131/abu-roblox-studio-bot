@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
+const fetch = require("node-fetch");
 
 const app = express();
 app.use(cors());
@@ -8,28 +9,73 @@ app.use(bodyParser.json());
 
 let latestCommand = null;
 
-// Test endpoint
-app.get("/", (req, res) => {
-    res.send("API çalışıyor 🚀");
+// Gemini API (GÜVENLİ şekilde)
+async function askGemini(message) {
+    const response = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-goog-api-key": process.env.GEMINI_API_KEY
+            },
+            body: JSON.stringify({
+                contents: [
+                    {
+                        parts: [
+                            {
+                                text: `
+Sen bir Roblox komut üreticisisin.
+
+SADECE JSON döndür:
+
+Örnek:
+{"command":"CREATE_PART"}
+
+Kullanıcı mesajı:
+${message}
+                            `
+                            }
+                        ]
+                    }
+                ]
+            })
+        }
+    );
+
+    const data = await response.json();
+
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    return text;
+}
+
+// Chat endpoint
+app.post("/chat", async (req, res) => {
+    const { message } = req.body;
+
+    try {
+        const aiResponse = await askGemini(message);
+
+        console.log("AI:", aiResponse);
+
+        const parsed = JSON.parse(aiResponse);
+
+        latestCommand = parsed;
+
+        res.json({ success: true, result: parsed });
+
+    } catch (err) {
+        console.log(err);
+        res.json({ success: false });
+    }
 });
 
-// Roblox buradan komut alacak
+// Roblox buradan komut çeker
 app.get("/getCommand", (req, res) => {
-    res.json({ command: latestCommand });
+    res.json(latestCommand || {});
 });
 
-// AI veya website buraya komut gönderecek
-app.post("/setCommand", (req, res) => {
-    const { command } = req.body;
-
-    latestCommand = command;
-
-    console.log("Yeni komut:", command);
-
-    res.json({ success: true });
-});
-
-// Health check (Render için)
 app.get("/healthz", (req, res) => {
     res.send("OK");
 });
